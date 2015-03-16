@@ -2,17 +2,21 @@ package gomvc
 
 import (
 	"fmt"
+	"github.com/gorilla/sessions"
+	"golang.org/x/net/websocket"
 	"net/http"
 	"reflect"
 	"strings"
 )
 
 var (
-	defaultPort = "8080"
-	HttpContext = ContextHandler{}
-	configs     = make(map[string]interface{})
-	driverDB    = ""
-	connInfo    = ""
+	defaultPort                             = "8080"
+	defaultMasterPage                       = "views/share/template/master.html"
+	HttpContext                             = ContextHandler{}
+	configs                                 = make(map[string]interface{})
+	driverDB                                = ""
+	connInfo                                = ""
+	Session           *sessions.CookieStore = nil
 )
 
 type RouteHandler struct {
@@ -24,12 +28,67 @@ type ContextHandler struct {
 	routes []RouteHandler
 }
 
+func SetSession(secret string) *sessions.CookieStore {
+	a := sessions.NewCookieStore([]byte(secret))
+	return a
+}
+
+func GetSession(req *http.Request, sessionName string) (*sessions.Session, error) {
+	ses, err := Session.Get(req, sessionName)
+	if err != nil {
+		return nil, err
+	}
+	return ses, nil
+}
+
 func Route(path string, ctl interface{}) {
 	HttpContext.routes = append(HttpContext.routes, RouteHandler{path, ctl})
 }
 
 func RouteFolder(path string, folder string) {
 	http.Handle(path, http.StripPrefix(path, http.FileServer(http.Dir(folder))))
+}
+
+func Socket(path string, ctl interface{}, checkOrigin bool) {
+	if path[:1] != "/" {
+		path = "/" + path
+	}
+
+	if path[len(path)-1:len(path)] != "/" {
+		path = path + "/"
+	}
+
+	if checkOrigin {
+		http.Handle(path, websocket.Handler(func(ws *websocket.Conn) {
+			rqpath := strings.TrimSpace(ws.Request().URL.Path)
+			action := strings.ToLower(strings.Split(rqpath[len(path):], "/")[0])
+			typeCont := reflect.TypeOf(ctl)
+			for i := 0; i < typeCont.NumMethod(); i++ {
+				method := strings.ToLower(typeCont.Method(i).Name)
+				if method == action {
+					reflect.ValueOf(ctl).Method(i).Call([]reflect.Value{reflect.ValueOf(ws)})
+					break
+				}
+			}
+		}))
+	} else {
+		http.HandleFunc(path,
+			func(w http.ResponseWriter, req *http.Request) {
+				s := websocket.Server{Handler: websocket.Handler(func(ws *websocket.Conn) {
+					rqpath := strings.TrimSpace(ws.Request().URL.Path)
+					action := strings.ToLower(strings.Split(rqpath[len(path):], "/")[0])
+					typeCont := reflect.TypeOf(ctl)
+					for i := 0; i < typeCont.NumMethod(); i++ {
+						method := strings.ToLower(typeCont.Method(i).Name)
+						if method == action {
+							reflect.ValueOf(ctl).Method(i).Call([]reflect.Value{reflect.ValueOf(ws)})
+							break
+						}
+					}
+				})}
+				s.ServeHTTP(w, req)
+			})
+	}
 }
 
 func Run() {
@@ -72,8 +131,10 @@ func Run() {
 
 		})
 	}
-
-	http.ListenAndServe(":"+defaultPort, nil)
+	err := http.ListenAndServe(":"+defaultPort, nil)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func SetConfig(name string, value interface{}) {
@@ -86,6 +147,10 @@ func SetConfig(name string, value interface{}) {
 		driverDB = value.(string)
 	case "conninfo":
 		connInfo = value.(string)
+	case "session":
+		Session = value.(*sessions.CookieStore)
+	case "masterpage":
+		defaultMasterPage = value.(string)
 	}
 }
 
