@@ -51,6 +51,12 @@ func (c *Controller) ServeJson(data interface{}) {
 	c.Data = data
 }
 
+func (c *Controller) Redirect(url string) {
+	fmt.Println(url)
+	c.New("redirect")
+	c.Text = url
+}
+
 func (c *Controller) RunAction(w http.ResponseWriter, r *http.Request) {
 	switch c.MsgType {
 	case "html":
@@ -71,6 +77,8 @@ func (c *Controller) RunAction(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(js)
+	case "redirect":
+		http.Redirect(w, r, c.Text, 301)
 	default:
 		w.Header().Add("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Add("X-XSS-Protection", "1; mode=block")
