@@ -68,6 +68,10 @@ func (c *LayoutController) Template(rw http.ResponseWriter, req *http.Request) {
 	data["Title"] = "Nexigo"
 	c.ServeTpl([]string{"views/app/home.html", "views/header.tpl", "views/footer.tpl"}, data)
 }
+
+func (c *LayoutController) Index(rw http.ResponseWriter, req *http.Request) {
+	c.Redirect("/login")
+}
 ```
 
 
